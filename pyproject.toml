@@ -10,5 +10,6 @@ dependencies = [
 [project.scripts]
 server = "inference:main"
 
+
 [tool.openenv]
 entrypoint = "inference:app"

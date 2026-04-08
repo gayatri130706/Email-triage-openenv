@@ -1,12 +1,10 @@
-<<<<<<< HEAD
 ---
-title: Email Triage OpenEnv
+title: Email Triage
 emoji: 📧
 colorFrom: blue
-colorTo: green
+colorTo: purple
 sdk: docker
-sdk_version: "20.10.24"
-app_file: server/main.py
+app_file: app.py
 pinned: false
 ---
 

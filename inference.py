@@ -174,14 +174,16 @@ def main():
     import uvicorn
 
     # Start API server in background thread for validator healthcheck
-    server_thread = threading.Thread(target=lambda: uvicorn.run(app, host="0.0.0.0", port=7860, reload=False), daemon=True)
+    server_thread = threading.Thread(
+        target=lambda: uvicorn.run(app, host="0.0.0.0", port=7860, reload=False),
+        daemon=True
+    )
     server_thread.start()
 
-    # Wait until /health is reachable
-    import requests
+    # Wait until /health is reachable using httpx (no requests dependency)
     for _ in range(30):
         try:
-            r = requests.get(f"{ENV_URL}/health", timeout=2)
+            r = httpx.get(f"{ENV_URL}/health", timeout=2)
             if r.status_code == 200:
                 print("[DEBUG] Healthcheck passed", flush=True)
                 break

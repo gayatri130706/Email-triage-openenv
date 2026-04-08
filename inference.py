@@ -27,6 +27,7 @@ TEMPERATURE        = 0.2
 MAX_TOKENS         = 400
 SUCCESS_THRESHOLD  = 0.5
 REQUEST_TIMEOUT    = 60
+EPSILON            = 1e-4  # strictly enforce 0<score<1
 
 SYSTEM_PROMPT = """\
 You are an expert email triage assistant inside an automated system.
@@ -42,11 +43,11 @@ def log_start(task: str, env: str, model: str) -> None:
 
 def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
     err = error.replace("\n", " ") if error else "null"
-    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={str(done).lower()} error={err}", flush=True)
+    print(f"[STEP] step={step} action={action} reward={reward:.4f} done={str(done).lower()} error={err}", flush=True)
 
 def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
-    rstr = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rstr}", flush=True)
+    rstr = ",".join(f"{r:.4f}" for r in rewards)
+    print(f"[END] success={str(success).lower()} steps={steps} score={score:.4f} rewards={rstr}", flush=True)
 
 # ---------------------------------------------------------------------------
 # Env HTTP client
@@ -126,20 +127,24 @@ def run_task(task_name: str, env_client: EnvClient, llm_client: OpenAI) -> float
             error_msg = None
             try:
                 step_res = env_client.step(action)
-                reward = float(step_res.get("reward", 0.0))
+                reward = float(step_res.get("reward", EPSILON))
+                # strictly enforce 0 < reward < 1
+                reward = min(max(reward, EPSILON), 1.0 - EPSILON)
                 done = step_res.get("done", False)
                 new_obs = step_res.get("observation", {})
                 remaining = set(new_obs.get("remaining_ids", []))
             except Exception as e:
-                reward, error_msg, done = 0.0, str(e), True
+                reward, error_msg, done = EPSILON, str(e), True
+
             rewards.append(reward)
             steps_taken = step
             action_str = f"triage(id={action.get('email_id','?')},priority={action.get('priority','?')},label={action.get('label','?')})"
             log_step(step=step, action=action_str, reward=reward, done=done, error=error_msg)
             if done: break
 
-        score = round(sum(rewards)/len(rewards),4) if rewards else 0.0
-        score = min(max(score,0.0),1.0)
+        # ---- Grader-safe score: strictly (0,1) ----
+        raw_score = sum(rewards)/len(rewards) if rewards else EPSILON
+        score = min(max(raw_score, EPSILON), 1.0 - EPSILON)
         success = score >= SUCCESS_THRESHOLD
     except Exception as e:
         print(f"[DEBUG] episode error: {e}", flush=True)
@@ -173,14 +178,14 @@ async def reset_env(task: str = "basic_triage", seed: int = 42):
 def main():
     import uvicorn
 
-    # Start API server in background thread for validator healthcheck
+    # Start API server in background thread
     server_thread = threading.Thread(
         target=lambda: uvicorn.run(app, host="0.0.0.0", port=7860, reload=False),
         daemon=True
     )
     server_thread.start()
 
-    # Wait until /health is reachable using httpx (no requests dependency)
+    # Wait for /health
     for _ in range(30):
         try:
             r = httpx.get(f"{ENV_URL}/health", timeout=2)
@@ -190,7 +195,7 @@ def main():
         except Exception:
             time.sleep(1)
     else:
-        print("[DEBUG] Healthcheck failed after 30s", flush=True)
+        print("[DEBUG] Healthcheck failed", flush=True)
         sys.exit(1)
 
     # Run tasks
@@ -204,8 +209,8 @@ def main():
 
     print(f"[DEBUG] ===== Summary =====", flush=True)
     for t, s in zip(TASKS, scores):
-        print(f"[DEBUG]   {t}: {s:.3f}", flush=True)
-    print(f"[DEBUG]   mean: {sum(scores)/len(scores):.3f}", flush=True)
+        print(f"[DEBUG]   {t}: {s:.4f}", flush=True)
+    print(f"[DEBUG]   mean: {sum(scores)/len(scores):.4f}", flush=True)
 
 if __name__ == "__main__":
     main()

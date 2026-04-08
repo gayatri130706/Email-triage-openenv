@@ -251,7 +251,19 @@ def main() -> None:
     for t, s in zip(TASKS, scores):
         print(f"[DEBUG]   {t}: {s:.3f}", flush=True)
     print(f"[DEBUG]   mean: {sum(scores)/len(scores):.3f}", flush=True)
-    
+
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def home():
+    return {"status": "running"}
+
+def main():
+    import uvicorn
+    uvicorn.run("inference:app", host="0.0.0.0", port=7860)
 
 if __name__ == "__main__":
-    main()
+    main()  
+

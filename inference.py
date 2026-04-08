@@ -20,14 +20,15 @@ from typing import List, Optional
 
 import httpx
 from openai import OpenAI
+from fastapi import FastAPI
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME   = os.getenv("MODEL_NAME",   "Qwen/Qwen2.5-72B-Instruct")
+MODEL_NAME   = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 API_KEY      = os.getenv("HF_TOKEN") or os.getenv("API_KEY") or "no-key"
-ENV_URL      = os.getenv("ENV_URL",      "http://localhost:7860").rstrip("/")
+ENV_URL      = os.getenv("ENV_URL", "http://localhost:7860").rstrip("/")
 
 BENCHMARK          = "email-triage-env"
 TASKS              = ["basic_triage", "full_triage", "triage_and_summarize"]
@@ -64,7 +65,7 @@ Priority rules:
 Output ONLY the JSON. Nothing else."""
 
 # ---------------------------------------------------------------------------
-# Logging (mandatory format)
+# Logging
 # ---------------------------------------------------------------------------
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
@@ -103,7 +104,6 @@ class EnvClient:
 # ---------------------------------------------------------------------------
 def call_model(client: OpenAI, email: dict, task_name: str, step: int, total: int) -> dict:
     import re
-
     needs_summary = task_name == "triage_and_summarize"
 
     user_prompt = f"""Task: {task_name} | Step {step}/{total}
@@ -119,7 +119,6 @@ Return ONLY valid JSON. No text before/after.
 
 summary: {"required (10-40 words)" if needs_summary else "null"}
 """
-
     try:
         resp = client.chat.completions.create(
             model=MODEL_NAME,
@@ -132,11 +131,8 @@ summary: {"required (10-40 words)" if needs_summary else "null"}
         )
 
         text = (resp.choices[0].message.content or "").strip()
-
-        # 🔍 DEBUG (IMPORTANT)
         print("[DEBUG MODEL OUTPUT]", text, flush=True)
 
-        # ✅ Extract JSON safely (fix for Qwen)
         match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
             parsed = json.loads(match.group())
@@ -150,8 +146,6 @@ summary: {"required (10-40 words)" if needs_summary else "null"}
 
     except Exception as exc:
         print(f"[DEBUG] model error: {exc}", flush=True)
-
-        # ✅ SMART FALLBACK (IMPORTANT FIX)
         body = email["body"].lower()
         subject = email["subject"].lower()
 
@@ -175,6 +169,7 @@ summary: {"required (10-40 words)" if needs_summary else "null"}
             "reply_needed": True,
             "summary": "Automated fallback summary." if needs_summary else None
         }
+
 # ---------------------------------------------------------------------------
 # Single task episode
 # ---------------------------------------------------------------------------
@@ -204,7 +199,7 @@ def run_task(task_name: str, env_client: EnvClient, llm_client: OpenAI) -> float
             error_msg = None
             try:
                 step_res = env_client.step(action)
-                reward = float(step_res.get("reward", 0.0))  # ✅ now reads actual reward
+                reward = float(step_res.get("reward", 0.0))
                 done = step_res.get("done", False)
                 new_obs = step_res.get("observation", {})
                 remaining = set(new_obs.get("remaining_ids", []))
@@ -230,11 +225,29 @@ def run_task(task_name: str, env_client: EnvClient, llm_client: OpenAI) -> float
     return score
 
 # ---------------------------------------------------------------------------
+# FastAPI App
+# ---------------------------------------------------------------------------
+app = FastAPI()
+env_client = EnvClient(ENV_URL)  # shared instance
+
+@app.get("/")
+def home():
+    return {"status": "running"}
+
+@app.post("/reset")
+async def reset_env():
+    """Reset OpenEnv environment for all tasks."""
+    try:
+        res = {task: env_client.reset(task=task) for task in TASKS}
+        return {"status": "OK", "details": res}
+    except Exception as e:
+        return {"status": "ERROR", "error": str(e)}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
     print(f"[DEBUG] env={ENV_URL} model={MODEL_NAME}", flush=True)
-    env_client = EnvClient(ENV_URL)
     llm_client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
     scores: List[float] = []
 
@@ -252,18 +265,9 @@ def main() -> None:
         print(f"[DEBUG]   {t}: {s:.3f}", flush=True)
     print(f"[DEBUG]   mean: {sum(scores)/len(scores):.3f}", flush=True)
 
-from fastapi import FastAPI
-
-app = FastAPI()
-
-@app.get("/")
-def home():
-    return {"status": "running"}
-
 def run_api():
     import uvicorn
     uvicorn.run("inference:app", host="0.0.0.0", port=7860)
 
 if __name__ == "__main__":
-    main()  
-
+    main()

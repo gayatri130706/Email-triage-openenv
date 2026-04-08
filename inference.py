@@ -260,7 +260,7 @@ app = FastAPI()
 def home():
     return {"status": "running"}
 
-def main():
+def run_api():
     import uvicorn
     uvicorn.run("inference:app", host="0.0.0.0", port=7860)
 

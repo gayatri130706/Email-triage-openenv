@@ -10,4 +10,3 @@ python-multipart==0.0.9
 requests==2.31.0
 =======
 >>>>>>> f5a84bd29ef220ccce6bb7e70c78f0be3c4aa4d3
-openai

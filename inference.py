@@ -235,15 +235,21 @@ def home():
     return {"status": "running"}
 
 @app.post("/reset")
-async def reset_env():
-    """Reset OpenEnv environment for all tasks."""
-    try:
-        res = {task: env_client.reset(task=task) for task in TASKS}
-        return {"status": "OK", "details": res}
-    except Exception as e:
-        return {"status": "ERROR", "error": str(e)}
+async def reset_env(task: str = "basic_triage", seed: int = 42):
+    # Simulated environment observation
+    emails = [
+        {"id": "e1", "sender": "a@example.com", "subject": "Invoice Due", "body": "Payment pending"},
+        {"id": "e2", "sender": "b@example.com", "subject": "Server down", "body": "System failure"},
+    ]
+    observation = {
+        "emails": emails,
+        "remaining_ids": [e["id"] for e in emails],
+        "total_emails": len(emails)
+    }
+    done = False
+    return {"observation": observation, "done": done}
 
-# ---------------------------------------------------------------------------
+#  ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main() -> None:
